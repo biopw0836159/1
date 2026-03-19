@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
+import io
 
-st.set_page_config(page_title="阿贤", layout="wide")
+st.set_page_config(page_title="抓鬼", layout="wide")
 
+# 1. 登录逻辑
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
@@ -17,6 +19,7 @@ if not st.session_state.auth:
             st.error("密码错误")
     st.stop()
 
+# 2. 审计逻辑
 def run_audit(df):
     df.columns = df.columns.str.strip()
     agg_rules = {
@@ -25,10 +28,16 @@ def run_audit(df):
         '个人游戏盈亏': 'sum',
         'RTP': 'mean'
     }
-    existing_cols = [c for c in agg_rules.keys() if c in df.columns]
+    # 检查核心列
     if '用户名' not in df.columns:
-        st.error("Excel 中缺少 '用户名' 这一列！")
+        st.error("❌ 找不到 '用户名' 列，请检查表头！")
         return pd.DataFrame()
+    
+    existing_cols = [c for c in agg_rules.keys() if c in df.columns]
+    
+    # 确保数据是数字
+    for col in existing_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     grouped = df.groupby('用户名')[existing_cols].agg({k: agg_rules[k] for k in existing_cols}).reset_index()
 
@@ -45,28 +54,35 @@ def run_audit(df):
     grouped['异常标记'] = grouped.apply(get_labels, axis=1)
     return grouped[grouped['异常标记'].notna()]
 
+# 3. 界面逻辑
 st.title("📊 异常用户自动筛查系统")
 uploaded_file = st.file_uploader("请上传 Excel 档案", type=["xlsx", "xls"])
 
 if uploaded_file:
     try:
-        # 兼容性读取逻辑
-        if uploaded_file.name.endswith('.xls'):
+        # --- 强力读取逻辑 ---
+        file_bytes = uploaded_file.read()
+        try:
+            # 尝试 1: 常规读取
+            data = pd.read_excel(io.BytesIO(file_bytes))
+        except:
             try:
-                data = pd.read_excel(uploaded_file, engine='xlrd')
+                # 尝试 2: 强制 xlrd 读取
+                data = pd.read_excel(io.BytesIO(file_bytes), engine='xlrd')
             except:
-                # 针对损坏或伪装 xls 的二次尝试
-                data = pd.read_excel(uploaded_file)
-        else:
-            data = pd.read_excel(uploaded_file)
-            
+                # 尝试 3: 如果是伪装成 xls 的 HTML 网页格式
+                data = pd.read_html(io.BytesIO(file_bytes))[0]
+        
         res = run_audit(data)
+        
         if not res.empty:
             st.warning(f"发现 {len(res)} 个异常账户")
             st.dataframe(res, use_container_width=True)
             csv = res.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 导出审计结果", csv, "report.csv")
+            st.download_button("📥 导出结果", csv, "audit.csv")
         else:
             st.success("✅ 未发现异常。")
+            
     except Exception as e:
-        st.error(f"文件解析失败。请尝试将文件【另存为】.xlsx 格式再上传。错误详情：{e}")
+        st.error(f"无法解析此文件。原因：{e}")
+        st.info("💡 终极解决办法：请用 Excel 打开该文件，点『另存为』，选择『.xlsx』格式再上传。")
