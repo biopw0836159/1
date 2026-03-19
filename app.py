@@ -26,7 +26,7 @@ def run_audit(df):
     
     # 定义名目与聚合规则 (条件 5: 同名自动汇总)
     agg_rules = {
-        '个人销量': 'sum',
+        '个人实际销量': 'sum',
         '投注单数': 'sum',
         '个人游戏盈亏': 'sum',
         'RTP': 'mean'
@@ -44,7 +44,7 @@ def run_audit(df):
     # 执行四项标记判定
     def get_labels(row):
         m = []
-        v = row.get('个人销量', 0)
+        v = row.get('个人实际销量', 0)
         c = row.get('投注单数', 0)
         r = row.get('RTP', 0)
         p = row.get('个人游戏盈亏', 0)
